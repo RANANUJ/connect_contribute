@@ -1,0 +1,33 @@
+name: connect_contribute
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Firebase Core - Required for all Firebase services
+  firebase_core: ^3.6.0
+  # Firebase Auth - For user authentication
+  firebase_auth: ^5.3.1
+  # Cloud Firestore - For database
+  cloud_firestore: ^5.4.3
+  # Firebase Storage - For file uploads
+  firebase_storage: ^12.3.2
+  # Firebase Analytics - For app analytics
+  firebase_analytics: ^11.3.3
+  # Local storage for caching
+  shared_preferences: ^2.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
