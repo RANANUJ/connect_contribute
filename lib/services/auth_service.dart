@@ -262,11 +262,8 @@ class AuthService {
         await _firestore.collection('ngo_members').doc(user.uid).set(ngoMemberData);
         print('NGO member document created successfully in ngo_members collection');
         
-        // Update NGO member count
-        await _firestore.collection('ngos').doc(ngoInfo.id).update({
-          'memberCount': FieldValue.increment(1),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        });
+        // DO NOT increment member count during signup - only when admin approves
+        // Member count is managed by admin approval/rejection in admin dashboard
         
       } else {
         // Store individual user data in 'users' collection

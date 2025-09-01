@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/app_models.dart';
 import '../services/firestore_service.dart';
-import 'login_screen.dart';
+import '../splash_screen.dart';
 
 class NGODashboardScreen extends StatefulWidget {
   const NGODashboardScreen({super.key});
@@ -310,9 +310,10 @@ class _NGODashboardScreenState extends State<NGODashboardScreen> with TickerProv
         }
 
         final members = snapshot.data?.docs ?? [];
+        // Only show verified and approved members
         final verifiedMembers = members.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          return data['isVerified'] == true;
+          return data['isVerified'] == true && data['approvalStatus'] == 'approved';
         }).toList();
 
         if (verifiedMembers.isEmpty) {
@@ -594,7 +595,7 @@ class _NGODashboardScreenState extends State<NGODashboardScreen> with TickerProv
                 await FirebaseAuth.instance.signOut();
                 if (context.mounted) {
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    MaterialPageRoute(builder: (context) => const SplashScreen()),
                     (route) => false,
                   );
                 }

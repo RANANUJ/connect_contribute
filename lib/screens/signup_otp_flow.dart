@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../screens/phone_otp_screen.dart';
 import '../screens/email_verification_screen.dart';
-import '../screens/home_screen.dart';
 
 class SignupOTPFlow extends StatefulWidget {
   const SignupOTPFlow({super.key});
@@ -448,10 +447,7 @@ class _SignupOTPFlowState extends State<SignupOTPFlow> {
   // Complete registration and navigate to home
   void _completeRegistration() {
     _authService.stopEmailVerificationPolling();
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-      (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   @override

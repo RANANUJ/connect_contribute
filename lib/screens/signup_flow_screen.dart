@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/optimized_auth_service.dart';
 import '../widgets/otp_recovery_dialog.dart';
-import 'home_screen.dart';
 import 'phone_otp_verification_screen.dart';
 import 'ngo_member_approval_screen.dart';
 
@@ -556,9 +555,7 @@ The daily SMS limit has been reached.
         ),
       );
       
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
     }
   }
 
@@ -796,6 +793,37 @@ The daily SMS limit has been reached.
                     }
                     return null;
                   },
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Info box for NGO credentials
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  border: Border.all(color: Colors.blue[200]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, 
+                         color: Colors.blue[600], 
+                         size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Get NGO name and code from your admin. '
+                        'Make sure to enter them exactly as provided (case-sensitive).',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               

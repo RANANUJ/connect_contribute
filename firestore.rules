@@ -16,13 +16,14 @@ service cloud.firestore {
     }
     
     // ===== NGO MEMBERS COLLECTION =====
-    // Allow NGO members to read and write their own document in ngo_members collection
+    // Allow NGO members to read and write their own document, AND allow admins to read/write all documents
     match /ngo_members/{memberId} {
+      // Allow members to read/write their own document
       allow read, write: if request.auth != null && request.auth.uid == memberId;
-    }
-    
-    // Allow authenticated users to read all NGO members (for admin dashboard)
-    match /ngo_members/{memberId} {
+      // Allow admins to read/write any member document
+      allow read, write: if request.auth != null && 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      // Allow authenticated users to read member documents (for general listings)
       allow read: if request.auth != null;
     }
     

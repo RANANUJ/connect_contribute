@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
-import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -15,14 +13,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Navigate to onboarding screen after 3 seconds
-    Timer(const Duration(seconds: 3), () {
-      if (_debugTapCount < 5) { // Only navigate if debug mode not activated
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const OnboardingScreen()),
-        );
-      }
-    });
+    print('� SplashScreen build method called');
   }
 
   void _handleDebugTap() {
@@ -39,6 +30,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('🎨 SplashScreen build method called');
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5), // Light grey background
       body: Center(
@@ -83,31 +75,6 @@ class _SplashScreenState extends State<SplashScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// Placeholder home screen - replace this with your actual home screen
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Connect & Contribute'),
-        backgroundColor: const Color(0xFF4A90A4),
-        foregroundColor: Colors.white,
-      ),
-      body: const Center(
-        child: Text(
-          'Welcome to Connect & Contribute!',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
         ),
       ),
     );

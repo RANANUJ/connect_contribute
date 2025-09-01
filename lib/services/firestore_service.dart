@@ -71,11 +71,8 @@ class FirestoreService {
     try {
       await _firestore.collection('ngo_members').doc(member.uid).set(member.toMap());
       
-      // Update NGO total members count
-      await _firestore.collection('ngos').doc(member.ngoId).update({
-        'totalMembers': FieldValue.increment(1),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      // DO NOT increment member count during creation - only when admin approves
+      // Member count is managed by admin approval/rejection in admin dashboard
     } catch (e) {
       print('Error creating NGO member: $e');
       throw 'Failed to create NGO member profile';
@@ -216,19 +213,59 @@ class FirestoreService {
   // Verify NGO credentials (for member signup)
   Future<NGOModel?> verifyNGOCredentials(String ngoName, String ngoCode) async {
     try {
+      print('Verifying NGO credentials:');
+      print('Input name: "$ngoName"');
+      print('Input code: "$ngoCode"');
+      
+      // Trim and normalize inputs
+      final trimmedName = ngoName.trim();
+      final trimmedCode = ngoCode.trim();
+      
+      print('Trimmed name: "$trimmedName"');
+      print('Trimmed code: "$trimmedCode"');
+      
+      // First try exact match
       QuerySnapshot snapshot = await _firestore
           .collection('ngos')
-          .where('name', isEqualTo: ngoName)
-          .where('ngoCode', isEqualTo: ngoCode)
+          .where('name', isEqualTo: trimmedName)
+          .where('ngoCode', isEqualTo: trimmedCode)
           .where('isActive', isEqualTo: true)
           .limit(1)
           .get();
       
+      print('Exact match query result: ${snapshot.docs.length} documents found');
+      
       if (snapshot.docs.isNotEmpty) {
         final doc = snapshot.docs.first;
         final data = doc.data() as Map<String, dynamic>;
+        print('Found matching NGO: ${data['name']} with code: ${data['ngoCode']}');
         return NGOModel.fromFirestore(data, doc.id);
       }
+      
+      // If no exact match, try case-insensitive search
+      QuerySnapshot allNgos = await _firestore
+          .collection('ngos')
+          .where('isActive', isEqualTo: true)
+          .get();
+      
+      print('Checking ${allNgos.docs.length} active NGOs for case-insensitive match:');
+      
+      for (var doc in allNgos.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final dbName = (data['name'] as String).trim();
+        final dbCode = (data['ngoCode'] as String).trim();
+        
+        print('  - DB Name: "$dbName", DB Code: "$dbCode"');
+        
+        // Case-insensitive comparison
+        if (dbName.toLowerCase() == trimmedName.toLowerCase() && 
+            dbCode.toLowerCase() == trimmedCode.toLowerCase()) {
+          print('Found case-insensitive match!');
+          return NGOModel.fromFirestore(data, doc.id);
+        }
+      }
+      
+      print('No matching NGO found');
       return null;
     } catch (e) {
       print('Error verifying NGO credentials: $e');

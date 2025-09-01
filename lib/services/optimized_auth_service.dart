@@ -420,7 +420,11 @@ class OptimizedAuthService {
       final firestoreService = FirestoreService();
       final ngoInfo = await firestoreService.verifyNGOCredentials(ngoName, ngoCode);
       if (ngoInfo == null) {
-        throw 'Invalid NGO credentials. Please check NGO name and code.';
+        throw 'NGO not found! Please check:\n'
+              '• NGO name and code are exactly as shown in admin dashboard\n'
+              '• Admin has created the NGO first\n'
+              '• Case-sensitive match required\n'
+              '• No extra spaces before/after text';
       }
       
       // Create NGO member document
@@ -457,6 +461,9 @@ class OptimizedAuthService {
       };
       
       batch.set(ngoMemberDoc, ngoMemberData);
+      
+      // DO NOT increment member count during signup - only when admin approves
+      // Member count is managed by admin approval/rejection in admin dashboard
       
       // Create NGO member stats document
       final memberStatsDoc = _firestore.collection('ngoMemberStats').doc(user.uid);

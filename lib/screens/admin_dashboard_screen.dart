@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/firestore_service.dart';
+import '../services/optimized_auth_service.dart';
 import '../models/app_models.dart';
 import 'create_ngo_screen.dart';
 import 'ngo_management_screen.dart';
+import '../splash_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -15,6 +17,12 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> with TickerProviderStateMixin {
   late TabController _tabController;
   final FirestoreService _firestoreService = FirestoreService();
+  final OptimizedAuthService _authService = OptimizedAuthService();
+  
+  // Add keys for refresh indicators
+  final GlobalKey<RefreshIndicatorState> _ngosRefreshKey = GlobalKey<RefreshIndicatorState>();
+  final GlobalKey<RefreshIndicatorState> _membersRefreshKey = GlobalKey<RefreshIndicatorState>();
+  final GlobalKey<RefreshIndicatorState> _pendingRefreshKey = GlobalKey<RefreshIndicatorState>();
 
   @override
   void initState() {
@@ -26,6 +34,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  // Refresh methods for each tab
+  Future<void> _refreshNGOs() async {
+    // Add a small delay to show the refresh indicator
+    await Future.delayed(const Duration(milliseconds: 500));
+    // Force rebuild by calling setState
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _refreshMembers() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _refreshPending() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      await _authService.signOut();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const SplashScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error logging out: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -69,9 +119,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildNGOsTab(),
-          _buildMembersTab(),
-          _buildPendingTab(),
+          RefreshIndicator(
+            key: _ngosRefreshKey,
+            onRefresh: _refreshNGOs,
+            child: _buildNGOsTab(),
+          ),
+          RefreshIndicator(
+            key: _membersRefreshKey,
+            onRefresh: _refreshMembers,
+            child: _buildMembersTab(),
+          ),
+          RefreshIndicator(
+            key: _pendingRefreshKey,
+            onRefresh: _refreshPending,
+            child: _buildPendingTab(),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -91,43 +153,62 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        final ngos = snapshot.data?.docs ?? [];
-
-        if (ngos.isEmpty) {
-          return const Center(
+          return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.business_outlined,
-                  size: 64,
-                  color: Colors.grey,
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'No NGOs registered yet',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Create your first NGO to get started',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => _refreshNGOs(),
+                  child: const Text('Retry'),
                 ),
               ],
             ),
           );
         }
 
+        final ngos = snapshot.data?.docs ?? [];
+
+        if (ngos.isEmpty) {
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [
+              SizedBox(height: 200),
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.business_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'No NGOs registered yet',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Pull down to refresh or create your first NGO',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
         return ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           itemCount: ngos.length,
           itemBuilder: (context, index) {
@@ -161,6 +242,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,39 +252,68 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                       Text(
                         'Category: ${ngo.category}',
                         style: const TextStyle(fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF2E7D32).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'Code: ${ngo.ngoCode}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF2E7D32),
+                          Expanded(
+                            flex: 3,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2E7D32).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Code: ${ngo.ngoCode}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2E7D32),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${ngo.memberCount} members',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.blue,
-                              ),
+                          Expanded(
+                            flex: 2,
+                            child: StreamBuilder<QuerySnapshot>(
+                              stream: _firestoreService.getAllNGOMembers(),
+                              builder: (context, snapshot) {
+                                int memberCount = 0;
+                                if (snapshot.hasData) {
+                                  // Count only verified and approved members for this specific NGO
+                                  memberCount = snapshot.data!.docs.where((doc) {
+                                    final data = doc.data() as Map<String, dynamic>;
+                                    return data['ngoId'] == ngo.id && 
+                                           data['isVerified'] == true && 
+                                           data['approvalStatus'] == 'approved';
+                                  }).length;
+                                }
+                                
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '$memberCount member${memberCount != 1 ? 's' : ''}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.blue,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ],
@@ -269,24 +381,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
         }
 
         if (ngoSnapshot.hasError) {
-          return Center(child: Text('Error loading NGOs: ${ngoSnapshot.error}'));
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Error loading NGOs: ${ngoSnapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => _refreshMembers(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
         }
 
         final ngos = ngoSnapshot.data ?? [];
 
         if (ngos.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.business_outlined, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'No NGOs created yet',
-                  style: TextStyle(fontSize: 18, color: Colors.grey),
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [
+              SizedBox(height: 200),
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.business_outlined, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text(
+                      'No NGOs created yet',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Pull down to refresh',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           );
         }
 
@@ -298,16 +433,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
             }
 
             if (memberSnapshot.hasError) {
-              return Center(child: Text('Error loading members: ${memberSnapshot.error}'));
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('Error loading members: ${memberSnapshot.error}'),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => _refreshMembers(),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              );
             }
 
             final allMembers = memberSnapshot.data?.docs ?? [];
             
-            // Group verified members by NGO
+            // Group verified members by NGO - Only show approved and verified members
             Map<String, List<NGOMemberModel>> membersByNGO = {};
             for (var doc in allMembers) {
               final member = NGOMemberModel.fromFirestore(doc);
-              if (member.isVerified && member.approvalStatus == 'approved') {
+              // Only include members who are both verified AND approved
+              if (member.isVerified == true && member.approvalStatus == 'approved') {
                 if (!membersByNGO.containsKey(member.ngoId)) {
                   membersByNGO[member.ngoId] = [];
                 }
@@ -316,6 +464,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
             }
 
             return ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               itemCount: ngos.length,
               itemBuilder: (context, index) {
@@ -337,10 +486,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                     title: Text(
                       ngo.name,
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                     subtitle: Text(
                       '${ngoMembers.length} verified member${ngoMembers.length != 1 ? 's' : ''} • Code: ${ngo.ngoCode}',
                       style: TextStyle(color: Colors.grey[600]),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                     children: [
                       if (ngoMembers.isEmpty)
@@ -361,20 +514,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                               style: const TextStyle(color: Colors.white, fontSize: 14),
                             ),
                           ),
-                          title: Text(member.name),
+                          title: Text(
+                            member.name,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Position: ${member.position}'),
-                              Text('Email: ${member.email}'),
+                              Text(
+                                'Position: ${member.position}',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                              Text(
+                                'Email: ${member.email}',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
                               if (member.department.isNotEmpty)
-                                Text('Department: ${member.department}'),
+                                Text(
+                                  'Department: ${member.department}',
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
                             ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.verified, color: Colors.green, size: 20),
+                              const Icon(Icons.verified, color: Colors.green, size: 20),
                               const SizedBox(width: 8),
                               PopupMenuButton<String>(
                                 onSelected: (value) {
@@ -414,6 +583,160 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                   ),
                 );
               },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPendingTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestoreService.getAllNGOMembers(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => _refreshPending(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final allMembers = snapshot.data?.docs ?? [];
+        // Only show members with pending status or unverified with no status
+        final pendingMembers = allMembers.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final approvalStatus = data['approvalStatus'];
+          final isVerified = data['isVerified'] ?? false;
+          
+          // Show if explicitly pending OR if unverified and no approval status set
+          return approvalStatus == 'pending' || 
+                 (isVerified == false && (approvalStatus == null || approvalStatus == ''));
+        }).toList();
+
+        if (pendingMembers.isEmpty) {
+          return ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [
+              SizedBox(height: 200),
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.pending_outlined,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'No pending members',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Pull down to refresh',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        return ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          itemCount: pendingMembers.length,
+          itemBuilder: (context, index) {
+            final member = NGOMemberModel.fromFirestore(pendingMembers[index]);
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.all(16),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.orange,
+                  child: Text(
+                    member.name.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  member.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
+                    Text(
+                      'NGO: ${member.ngoName ?? 'Not specified'}',
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Code: ${member.ngoCode ?? 'N/A'}',
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Email: ${member.email}',
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.check, color: Colors.green),
+                      onPressed: () => _verifyMember(context, member),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.red),
+                      onPressed: () => _rejectMember(context, member),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         );
@@ -482,7 +805,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
           ElevatedButton(
             onPressed: () async {
               try {
+                // Only decrement member count if the member was previously approved
+                bool wasApproved = member.isVerified == true && member.approvalStatus == 'approved';
+                
                 await _firestoreService.deleteNGOMember(member.uid);
+                
+                // Update NGO member count if member was approved
+                if (wasApproved) {
+                  await _firestoreService.updateNGO(member.ngoId, {
+                    'memberCount': FieldValue.increment(-1),
+                    'lastUpdated': FieldValue.serverTimestamp(),
+                  });
+                }
+                
                 if (context.mounted) {
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -508,255 +843,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
           ),
         ],
       ),
-    );
-  }
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Status Badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: member.isVerified ? Colors.green[50] : Colors.orange[50],
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: member.isVerified ? Colors.green : Colors.orange,
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                member.isVerified ? Icons.verified : Icons.pending,
-                                size: 16,
-                                color: member.isVerified ? Colors.green[700] : Colors.orange[700],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                member.isVerified ? 'Verified' : 'Pending',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: member.isVerified ? Colors.green[700] : Colors.orange[700],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 20),
-                    
-                    // Contact Information Section
-                    _buildInfoSection('Contact Information', [
-                      _buildInfoRow(Icons.email, 'Email', member.email),
-                      _buildInfoRow(Icons.phone, 'Phone', member.phone.isEmpty ? 'Not provided' : member.phone),
-                      if (member.emergencyContact.isNotEmpty)
-                        _buildInfoRow(Icons.contact_emergency, 'Emergency Contact', member.emergencyContact),
-                    ]),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // NGO Information Section
-                    _buildInfoSection('NGO Information', [
-                      _buildInfoRow(Icons.business, 'NGO Name', member.ngoName ?? 'Not specified'),
-                      _buildInfoRow(Icons.confirmation_number, 'NGO Code', member.ngoCode ?? 'N/A'),
-                      if (member.department.isNotEmpty)
-                        _buildInfoRow(Icons.domain, 'Department', member.department),
-                    ]),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Professional Information Section
-                    _buildInfoSection('Professional Details', [
-                      if (member.employeeId.isNotEmpty)
-                        _buildInfoRow(Icons.badge, 'Employee ID', member.employeeId),
-                      if (member.workSchedule.isNotEmpty)
-                        _buildInfoRow(Icons.schedule, 'Work Schedule', member.workSchedule),
-                      if (member.responsibilities.isNotEmpty)
-                        _buildInfoRow(Icons.task, 'Responsibilities', member.responsibilities.join(', ')),
-                      if (member.permissions.isNotEmpty)
-                        _buildInfoRow(Icons.security, 'Permissions', member.permissions.join(', ')),
-                    ]),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Account Information Section
-                    _buildInfoSection('Account Details', [
-                      _buildInfoRow(Icons.person, 'User ID', member.uid),
-                      _buildInfoRow(Icons.date_range, 'Created At', 
-                        member.createdAt != null ? _formatDate(member.createdAt!) : 'Not available'),
-                      if (member.joinedAt != null)
-                        _buildInfoRow(Icons.work, 'Joined NGO', _formatDate(member.joinedAt!)),
-                      if (member.lastLogin != null)
-                        _buildInfoRow(Icons.access_time, 'Last Login', _formatDate(member.lastLogin!)),
-                      _buildInfoRow(Icons.toggle_on, 'Account Status', member.isActive ? 'Active' : 'Inactive'),
-                    ]),
-                    
-                    // Action Buttons
-                    if (!member.isVerified) ...[
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => _verifyMember(context, member),
-                              icon: const Icon(Icons.check_circle),
-                              label: const Text('Verify Member'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _rejectMember(context, member),
-                              icon: const Icon(Icons.cancel),
-                              label: const Text('Reject'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildPendingTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestoreService.getAllNGOMembers(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        final allMembers = snapshot.data?.docs ?? [];
-        final pendingMembers = allMembers.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          return data['approvalStatus'] == 'pending' || 
-                 (data['isVerified'] == false && data['approvalStatus'] == null);
-        }).toList();
-
-        if (pendingMembers.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.pending_outlined,
-                  size: 64,
-                  color: Colors.grey,
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'No pending members',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: pendingMembers.length,
-          itemBuilder: (context, index) {
-            final member = NGOMemberModel.fromFirestore(pendingMembers[index]);
-
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: CircleAvatar(
-                  backgroundColor: Colors.orange,
-                  child: Text(
-                    member.name.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                title: Text(
-                  member.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    Text(
-                      'NGO: ${member.ngoName ?? 'Not specified'}',
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Code: ${member.ngoCode ?? 'N/A'}',
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Email: ${member.email}',
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                  ],
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.check, color: Colors.green),
-                      onPressed: () => _verifyMember(context, member),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      onPressed: () => _rejectMember(context, member),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -796,8 +882,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
           ),
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop(); // Go back to login
+              Navigator.of(context).pop(); // Close dialog
+              _logout(); // Call logout method
             },
             child: const Text('Logout'),
           ),
@@ -873,27 +959,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                   ),
                   maxLines: 3,
                 ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.vpn_key, color: Color(0xFF2E7D32)),
-                      const SizedBox(width: 8),
-                      Text(
-                        'NGO Code: ${ngo.ngoCode}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF2E7D32),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
@@ -907,15 +972,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
             onPressed: () async {
               if (formKey.currentState!.validate()) {
                 try {
-                  final updatedNGO = ngo.copyWith(
-                    name: nameController.text.trim(),
-                    category: categoryController.text.trim(),
-                    description: descriptionController.text.trim(),
-                    location: locationController.text.trim(),
-                    lastUpdated: DateTime.now(),
-                  );
-
-                  await _firestoreService.updateNGO(ngo.id, updatedNGO.toFirestore());
+                  await _firestoreService.updateNGO(ngo.id, {
+                    'name': nameController.text.trim(),
+                    'category': categoryController.text.trim(),
+                    'location': locationController.text.trim(),
+                    'description': descriptionController.text.trim(),
+                  });
                   
                   if (context.mounted) {
                     Navigator.of(context).pop();
@@ -991,9 +1053,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
 
   void _verifyMember(BuildContext context, NGOMemberModel member) async {
     try {
+      // Update member approval status
       await _firestoreService.updateNGOMember(member.uid, {
         'isVerified': true,
         'approvalStatus': 'approved',
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+      
+      // Update NGO member count
+      await _firestoreService.updateNGO(member.ngoId, {
+        'memberCount': FieldValue.increment(1),
         'lastUpdated': FieldValue.serverTimestamp(),
       });
       
@@ -1085,76 +1154,5 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
         ],
       ),
     );
-  }
-
-  // Helper methods for building member information display
-  Widget _buildInfoSection(String title, List<Widget> children) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2E7D32),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Column(
-            children: children,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: Colors.grey[600],
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[700],
-                fontSize: 14,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 }

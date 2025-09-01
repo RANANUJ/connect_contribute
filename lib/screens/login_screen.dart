@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/optimized_auth_service.dart';
 import '../services/admin_initialization_service.dart';
 import '../services/firestore_service.dart';
+import '../services/auth_state_manager.dart';
 import 'signup_flow_screen.dart';
-import 'home_screen.dart';
 import 'admin_dashboard_screen.dart';
 import 'ngo_member_approval_screen.dart';
 import 'ngo_dashboard_screen.dart';
@@ -20,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = OptimizedAuthService();
+  final _authStateManager = AuthStateManager();
   
   bool _isLoading = false;
   bool _isPasswordVisible = false;
@@ -43,19 +45,65 @@ class _LoginScreenState extends State<LoginScreen> {
         
         // Check for admin credentials first
         if (email == 'rana1452005@gmail.com' && password == 'anuj#123') {
-          // Authenticate with admin system and update last login
-          final adminModel = await AdminInitializationService.checkAdminStatus(email);
-          if (adminModel != null) {
-            await AdminInitializationService.updateAdminLogin(adminModel.uid);
+          try {
+            // Try to authenticate with Firebase
+            final userCredential = await _authService.signInWithEmailPassword(email, password);
+            final user = userCredential?.user;
+            
+            if (user != null) {
+              // Successfully authenticated - ensure admin document exists
+              await _ensureAdminDocumentExists(user.uid, email);
+              
+              // Save admin user type
+              await _authStateManager.saveUserType('admin');
+              
+              // Admin login - redirect to admin dashboard
+              if (mounted) {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (context) => const AdminDashboardScreen()),
+                );
+              }
+              return;
+            }
+          } catch (e) {
+            // If authentication fails, try to create the admin account
+            print('Admin authentication failed, attempting to create account: $e');
+            try {
+              // Create admin account in Firebase Auth
+              final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+                email: email,
+                password: password,
+              );
+              
+              final user = userCredential.user;
+              if (user != null) {
+                // Create admin document in Firestore
+                await _ensureAdminDocumentExists(user.uid, email);
+                
+                // Save admin user type
+                await _authStateManager.saveUserType('admin');
+                
+                // Admin login - redirect to admin dashboard
+                if (mounted) {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (context) => const AdminDashboardScreen()),
+                  );
+                }
+                return;
+              }
+            } catch (createError) {
+              print('Failed to create admin account: $createError');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Admin account setup failed: ${createError.toString()}'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+              return;
+            }
           }
-          
-          // Admin login - redirect to admin dashboard
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const AdminDashboardScreen()),
-            );
-          }
-          return;
         }
         
         // Regular user login with Firebase
@@ -69,27 +117,21 @@ class _LoginScreenState extends State<LoginScreen> {
           
           if (ngoMember != null) {
             // User is an NGO member - check approval status
-            if (ngoMember.approvalStatus == 'approved' && ngoMember.isVerified) {
-              // Approved NGO member - go to NGO dashboard
+            if (ngoMember.approvalStatus == 'approved' && ngoMember.isVerified == true) {
+              // Approved and verified NGO member - go to NGO dashboard
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (context) => const NGODashboardScreen()),
               );
-            } else if (ngoMember.approvalStatus == 'rejected') {
-              // Rejected member - show rejection screen
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (context) => const NGOMemberApprovalScreen()),
-              );
             } else {
-              // Pending approval - show waiting screen
+              // Rejected, pending, or unverified member - go to approval screen
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (context) => const NGOMemberApprovalScreen()),
               );
             }
           } else {
-            // Regular user - go to home screen
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const HomeScreen()),
-            );
+            // Regular user - let AuthWrapper handle routing after login
+            print('🏠 User authenticated, letting AuthWrapper handle routing');
+            Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
           }
         }
       } catch (e) {
@@ -489,5 +531,46 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+
+  // Helper method to ensure admin document exists in Firestore
+  Future<void> _ensureAdminDocumentExists(String uid, String email) async {
+    try {
+      // Check if admin document exists
+      final adminModel = await AdminInitializationService.checkAdminStatus(email);
+      
+      if (adminModel == null) {
+        // Create admin document if it doesn't exist
+        await AdminInitializationService.createAdminAccount(
+          uid: uid,
+          name: 'System Administrator',
+          email: email,
+          phone: '+91-9999999999',
+          role: 'super_admin',
+          permissions: [
+            'create_ngos',
+            'delete_ngos',
+            'verify_members',
+            'manage_admins',
+            'access_analytics',
+            'system_settings',
+            'user_management',
+            'content_moderation'
+          ],
+          canCreateNGOs: true,
+          canDeleteNGOs: true,
+          canVerifyMembers: true,
+          canAccessAnalytics: true,
+        );
+        print('✅ Admin document created successfully');
+      } else {
+        // Update last login for existing admin
+        await AdminInitializationService.updateAdminLogin(adminModel.uid);
+        print('✅ Admin last login updated');
+      }
+    } catch (e) {
+      print('❌ Error ensuring admin document exists: $e');
+      throw e;
+    }
   }
 }

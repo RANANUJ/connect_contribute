@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/app_models.dart';
 import '../services/firestore_service.dart';
 import 'ngo_dashboard_screen.dart';
-import 'login_screen.dart';
+import '../splash_screen.dart';
 
 class NGOMemberApprovalScreen extends StatefulWidget {
   const NGOMemberApprovalScreen({super.key});
@@ -36,7 +36,8 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
         });
 
         // Check approval status and navigate accordingly
-        if (memberData.approvalStatus == 'approved') {
+        if (memberData.approvalStatus == 'approved' && memberData.isVerified == true) {
+          // Only navigate to dashboard if both approved AND verified
           if (mounted) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
@@ -46,8 +47,11 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
           }
         } else if (memberData.approvalStatus == 'rejected') {
           // Show rejection reason and allow re-application
-          _showRejectionDialog(memberData.rejectionReason);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showRejectionDialog(memberData.rejectionReason);
+          });
         }
+        // If pending or no status, stay on this screen
       }
     } catch (e) {
       print('Error checking approval status: $e');
@@ -139,9 +143,85 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
             },
             child: const Text('Logout'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _requestAgain();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Request Again'),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _requestAgain() async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Resubmitting application...'),
+            ],
+          ),
+        ),
+      );
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw 'User not authenticated';
+
+      // Update the member's status to pending and clear rejection reason
+      await _firestoreService.updateNGOMember(user.uid, {
+        'approvalStatus': 'pending',
+        'rejectionReason': null,
+        'isVerified': false, // Ensure isVerified is false for new request
+        'appliedAt': FieldValue.serverTimestamp(),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Application resubmitted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Refresh the status to show pending state
+      await _checkApprovalStatus();
+
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error resubmitting application: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _logout() async {
@@ -149,7 +229,7 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
       await FirebaseAuth.instance.signOut();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          MaterialPageRoute(builder: (context) => const SplashScreen()),
           (route) => false,
         );
       }
@@ -179,147 +259,278 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Status Icon
+      body: ListView(
+        padding: const EdgeInsets.all(24.0),
+        children: [
+          // Add some top spacing
+          const SizedBox(height: 40),
+          
+          // Status Icon and Content
+          if (_memberData?.approvalStatus == 'rejected') ...[
+            // Rejected State
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.cancel,
+                size: 60,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Rejected Title
+            const Text(
+              'Application Rejected',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+
+            // Rejected Description
+            Text(
+              'Your NGO membership application has been rejected by the admin.',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            
+            // Rejection Reason if available
+            if (_memberData?.rejectionReason != null && _memberData!.rejectionReason!.isNotEmpty) ...[
+              const SizedBox(height: 20),
               Container(
-                width: 120,
-                height: 120,
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  shape: BoxShape.circle,
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
                 ),
-                child: const Icon(
-                  Icons.hourglass_top,
-                  size: 60,
-                  color: Colors.orange,
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Title
-              const Text(
-                'Pending Approval',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF333333),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-
-              // Description
-              Text(
-                'Your NGO membership application is under review by the admin.',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-
-              Text(
-                'You will be notified once your application is approved.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[500],
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 40),
-
-              // Member Information Card
-              if (_memberData != null) ...[
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Application Details',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF333333),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildInfoRow('Name', _memberData!.name),
-                        _buildInfoRow('Email', _memberData!.email),
-                        _buildInfoRow('NGO Name', _memberData!.ngoName ?? 'N/A'),
-                        _buildInfoRow('NGO Code', _memberData!.ngoCode ?? 'N/A'),
-                        _buildInfoRow('Applied On', 
-                          _memberData!.appliedAt != null 
-                            ? _formatDate(_memberData!.appliedAt!)
-                            : 'N/A'
-                        ),
-                        _buildInfoRow('Status', 'Pending Review', isStatus: true),
-                      ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Reason:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                        fontSize: 16,
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
-
-              // Refresh Button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: _isRefreshing ? null : _refreshStatus,
-                  icon: _isRefreshing 
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.refresh),
-                  label: Text(
-                    _isRefreshing ? 'Checking Status...' : 'Refresh Status',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E7D32),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                    const SizedBox(height: 8),
+                    Text(
+                      _memberData!.rejectionReason!,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-
-              // Help Text
-              Text(
-                'If you have any questions, please contact the admin.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[500],
-                ),
-                textAlign: TextAlign.center,
               ),
             ],
+          ] else ...[
+            // Pending State
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.hourglass_top,
+                size: 60,
+                color: Colors.orange,
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Pending Title
+            const Text(
+              'Pending Approval',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF333333),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+
+            // Pending Description
+            Text(
+              'Your NGO membership application is under review by the admin.',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+
+            Text(
+              'You will be notified once your application is approved.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          
+          const SizedBox(height: 40),
+
+          // Member Information Card
+          if (_memberData != null) ...[
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Application Details',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF333333),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildInfoRow('Name', _memberData!.name),
+                    _buildInfoRow('Email', _memberData!.email),
+                    _buildInfoRow('NGO Name', _memberData!.ngoName ?? 'N/A'),
+                    _buildInfoRow('NGO Code', _memberData!.ngoCode ?? 'N/A'),
+                    _buildInfoRow('Applied On', 
+                      _memberData!.appliedAt != null 
+                        ? _formatDate(_memberData!.appliedAt!)
+                        : 'N/A'
+                    ),
+                    _buildInfoRow(
+                      'Status', 
+                      _memberData!.approvalStatus == 'rejected' ? 'Rejected' : 'Pending Review', 
+                      isStatus: true,
+                      isRejected: _memberData!.approvalStatus == 'rejected'
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Action Buttons
+          if (_memberData?.approvalStatus == 'rejected') ...[
+            // Request Again Button for rejected applications
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: _requestAgain,
+                icon: const Icon(Icons.refresh),
+                label: const Text(
+                  'Request Again',
+                  style: TextStyle(fontSize: 16),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E7D32),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Logout Button
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout),
+                label: const Text(
+                  'Logout',
+                  style: TextStyle(fontSize: 16),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey[700],
+                  side: BorderSide(color: Colors.grey[400]!),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ] else ...[
+            // Refresh Button for pending applications
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: _isRefreshing ? null : _refreshStatus,
+                icon: _isRefreshing 
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.refresh),
+                label: Text(
+                  _isRefreshing ? 'Checking Status...' : 'Refresh Status',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E7D32),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          
+          const SizedBox(height: 16),
+
+          // Help Text
+          Text(
+            _memberData?.approvalStatus == 'rejected' 
+              ? 'You can request again to resubmit your application.'
+              : 'If you have any questions, please contact the admin.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+            ),
+            textAlign: TextAlign.center,
           ),
-        ),
+          
+          // Bottom spacing
+          const SizedBox(height: 40),
+        ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value, {bool isStatus = false}) {
+  Widget _buildInfoRow(String label, String value, {bool isStatus = false, bool isRejected = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -341,9 +552,9 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
               children: [
                 if (isStatus) ...[
                   Icon(
-                    Icons.pending,
+                    isRejected ? Icons.cancel : Icons.pending,
                     size: 16,
-                    color: Colors.orange,
+                    color: isRejected ? Colors.red : Colors.orange,
                   ),
                   const SizedBox(width: 4),
                 ],
@@ -352,7 +563,9 @@ class _NGOMemberApprovalScreenState extends State<NGOMemberApprovalScreen> {
                     value,
                     style: TextStyle(
                       fontSize: 14,
-                      color: isStatus ? Colors.orange : const Color(0xFF333333),
+                      color: isStatus 
+                        ? (isRejected ? Colors.red : Colors.orange) 
+                        : const Color(0xFF333333),
                       fontWeight: isStatus ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
